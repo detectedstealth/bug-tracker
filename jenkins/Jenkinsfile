@@ -14,14 +14,24 @@ pipeline {
             steps {
                 dir('bugtracker-backend') {
                     sh '''
-                    export GOCACHE="$PWD/.cache"
-                    export GOMODCACHE="$PWD/.gomodcache"
+                        export GOCACHE="$PWD/.cache"
+                        export GOMODCACHE="$PWD/.gomodcache"
 
-                    mkdir -p "$GOCACHE"
-                    mkdir -p "$GOMODCACHE"
+                        mkdir -p "$GOCACHE"
+                        mkdir -p "$GOMODCACHE"
 
-                    go env
+                        go env
 
+                        go build -o bugtracker-backend cmd/bugtracker/main.go
+
+                        go test -v ./... 2>&1 | go-junit-report -set-exit-code > report.xml
+
+                        go test -coverprofile=coverage.out -covermode=atomic ./...
+                        go tool cover -html=coverage.out -o coverage.html
+
+                        mkdir -p reports
+                        mv coverage.html reports/
+                        mv report.xml reports/
                     '''
                 }
             }
