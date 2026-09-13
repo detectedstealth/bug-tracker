@@ -2,82 +2,91 @@ pipeline {
     agent any
 
     stages {
-        stage('Unit Tests - Backend') {
-            agent {
-                docker {
-                    image 'snakee/golang-junit:1.21'
-                    reuseNode true
-                    alwaysPull true
+        stage('Execute Unit Tests') {
+            parallel {
+                stage('Unit Tests - Backend') {
+                    agent {
+                        docker {
+                            image 'snakee/golang-junit:1.21'
+                            reuseNode true
+                            alwaysPull true
+                        }
+                    }
+
+                    steps {
+                        dir('bugtracker-backend') {
+                            sh '''
+                                export GOCACHE="$PWD/.cache"
+                                export GOMODCACHE="$PWD/.gomodcache"
+
+                                mkdir -p "$GOCACHE"
+                                mkdir -p "$GOMODCACHE"
+
+                                go env
+
+                                go build -o bugtracker-backend cmd/bugtracker/main.go
+
+                                go test -v ./... 2>&1 | go-junit-report -set-exit-code > report.xml
+
+                                go test -coverprofile=coverage.out -covermode=atomic ./...
+                                go tool cover -html=coverage.out -o coverage.html
+
+                                mkdir -p reports
+                                mv coverage.html reports/
+                                mv report.xml reports/
+                            '''
+                        }
+                    }
+                    post {
+                        always {
+                            junit 'bugtracker-backend/reports/report.xml'
+                            publishHTML target: [
+                                allowMissing: true,
+                                alwaysLinkToLastBuild: true,
+                                keepAll: true,
+                                reportDir: 'bugtracker-backend/reports',
+                                reportFiles: 'coverage.html',
+                                reportName: 'Backend Coverage Report'
+                            ]
+                        }
+                    }
                 }
-            }
 
-            steps {
-                dir('bugtracker-backend') {
-                    sh '''
-                        export GOCACHE="$PWD/.cache"
-                        export GOMODCACHE="$PWD/.gomodcache"
+                stage('Unit Tests - Frontend') {
+                    agent {
+                        docker {
+                            image 'node:20-alpine'
+                            reuseNode true
+                        }
+                    }
+                    steps {
+                        dir('bugtracker-frontend') {
+                            sh '''
+                                npm ci
+                                npm test
 
-                        mkdir -p "$GOCACHE"
-                        mkdir -p "$GOMODCACHE"
-
-                        go env
-
-                        go build -o bugtracker-backend cmd/bugtracker/main.go
-
-                        go test -v ./... 2>&1 | go-junit-report -set-exit-code > report.xml
-
-                        go test -coverprofile=coverage.out -covermode=atomic ./...
-                        go tool cover -html=coverage.out -o coverage.html
-
-                        mkdir -p reports
-                        mv coverage.html reports/
-                        mv report.xml reports/
-                    '''
-                }
-            }
-            post {
-                always {
-                    junit 'bugtracker-backend/reports/report.xml'
-                    publishHTML target: [
-                        allowMissing: true,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
-                        reportDir: 'bugtracker-backend/reports',
-                        reportFiles: 'coverage.html',
-                        reportName: 'Backend Coverage Report'
-                    ]
+                                mkdir -p reports
+                                mv coverage reports/
+                            '''
+                        }
+                    }
+                    post {
+                        always {
+                            junit 'bugtracker-frontend/test-results.xml'
+                            publishHTML target: [
+                                reportDir: 'bugtracker-frontend/reports/coverage',
+                                reportFiles: 'index.html',
+                                reportName: 'Frontend Coverage Report'
+                            ]
+                        }
+                    }
                 }
             }
         }
-
-        stage('Unit Tests - Frontend') {
-            agent {
-                docker {
-                    image 'node:20-alpine'
-                    reuseNode true
-                }
-            }
-            steps {
-                dir('bugtracker-frontend') {
-                    sh '''
-                        npm ci
-                        npm test
-
-                        mkdir -p reports
-                        mv coverage reports/
-                    '''
-                }
-            }
-            post {
-                always {
-                    junit 'bugtracker-frontend/test-results.xml'
-                    publishHTML target: [
-                        reportDir: 'bugtracker-frontend/reports/coverage',
-                        reportFiles: 'index.html',
-                        reportName: 'Frontend Coverage Report'
-                    ]
-                }
-            }
+    }
+    post {
+        always {
+            cleanWs()
         }
     }
 }
